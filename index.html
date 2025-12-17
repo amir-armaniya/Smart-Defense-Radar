@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سامانه دیدبان هوشمند | پایش یکپارچه شهری</title>
+
+    <script src="assets/tailwind.js"></script>
+    <script src="assets/papaparse.js"></script>
+    <link rel="stylesheet" href="assets/leaflet.css" />
+    <script src="assets/leaflet.js"></script>
+    
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Vazirmatn', 'Tahoma', 'sans-serif'] },
+                    colors: {
+                        'mil-dark': '#0b1120',
+                        'mil-panel': '#1e293b',
+                        'neon-blue': '#0ea5e9',
+                        'neon-red': '#f43f5e',
+                        'neon-yellow': '#eab308',
+                        'neon-green': '#10b981',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #020617; overflow: hidden; font-size: 16px; }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+        }
+
+        .card-high { border-right: 4px solid #f43f5e; background: linear-gradient(90deg, rgba(244, 63, 94, 0.05) 0%, transparent 100%); }
+        .card-medium { border-right: 4px solid #eab308; }
+        .card-low { border-right: 4px solid #10b981; }
+
+        .leaflet-container { background: #0f172a !important; }
+        /* فیلتر برای تیره کردن نقشه */
+        .leaflet-layer { filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%) grayscale(30%); }
+        .leaflet-pane img { max-width: none !important; }
+
+        .custom-scroll::-webkit-scrollbar { width: 5px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    </style>
+</head>
+
+<body class="text-slate-300 font-sans h-screen flex flex-col">
+
+    <header class="h-16 border-b border-slate-800 bg-mil-dark/95 flex items-center justify-between px-6 z-50">
+        <div class="flex items-center gap-4">
+            <div class="w-10 h-10 bg-blue-500/10 rounded flex items-center justify-center border border-blue-500/30">
+                <i class="fa-solid fa-eye text-neon-blue text-xl animate-pulse"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-white leading-tight">سامانه <span class="text-neon-blue">دیدبان هوشمند</span></h1>
+                <div class="text-[10px] text-slate-500 font-bold">مرکز رصد و پایش یکپارچه شهری</div>
+            </div>
+        </div>
+        
+        <div class="flex gap-4 items-center">
+            <div id="connection-box" class="bg-slate-900 border border-slate-700 px-3 py-1.5 rounded flex items-center gap-2">
+                <div id="status-dot" class="w-2 h-2 rounded-full bg-slate-500"></div>
+                <span id="status-text" class="text-[10px] font-bold text-slate-400">بررسی شبکه...</span>
+            </div>
+            <div class="bg-slate-900 border border-slate-700 px-4 py-1.5 rounded font-mono text-white font-bold text-lg tracking-widest" id="clock">
+                00:00:00
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-1 p-4 gap-4 flex flex-col md:flex-row overflow-hidden w-full relative">
+
+        <div class="flex-1 flex flex-col gap-4 min-w-0 h-full">
+            <div class="flex gap-3 shrink-0">
+                <div class="relative flex-1 group">
+                    <i class="fa-solid fa-search absolute right-4 top-3.5 text-slate-500 group-hover:text-neon-blue transition-colors"></i>
+                    <input type="text" id="search-input" placeholder="جستجو در گزارش‌ها..." 
+                        class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg pr-12 pl-4 py-3 focus:border-neon-blue focus:ring-1 focus:ring-neon-blue/20 focus:outline-none transition-all shadow-inner text-sm">
+                </div>
+                <button onclick="forceRefresh()" class="px-4 bg-slate-800 border border-slate-600 hover:bg-slate-700 hover:border-slate-500 rounded-lg text-white transition shadow-lg active:scale-95">
+                    <i class="fa-solid fa-rotate"></i>
+                </button>
+            </div>
+
+            <div class="glass-panel rounded-lg flex-1 flex flex-col overflow-hidden">
+                <div class="p-3 border-b border-white/5 bg-slate-900/50 flex justify-between items-center">
+                    <span class="text-xs font-bold text-slate-300 flex items-center gap-2">
+                        <i class="fa-solid fa-stream text-neon-blue"></i>
+                        فید اطلاعاتی
+                    </span>
+                    <span class="text-[10px] text-slate-500" id="last-update">...</span>
+                </div>
+                
+                <div id="offline-warning" class="hidden bg-red-500/10 border-b border-red-500/20 p-2 text-center text-[11px] text-red-400 font-bold animate-pulse">
+                    <i class="fa-solid fa-plug-circle-xmark mr-1"></i> اینترنت قطع است. نمایش نسخه آفلاین.
+                </div>
+
+                <div id="reports-container" class="flex-1 overflow-y-auto p-4 space-y-3 custom-scroll">
+                    <div class="flex flex-col items-center justify-center h-full text-slate-600 gap-4 opacity-50">
+                        <i class="fa-solid fa-satellite-dish fa-spin text-4xl"></i>
+                        <span class="text-xs animate-pulse">در حال برقراری ارتباط امن...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="w-full md:w-[380px] flex flex-col gap-4 shrink-0 h-full">
+            <div class="grid grid-cols-2 gap-3 shrink-0">
+                <div class="glass-panel p-4 rounded-lg border-t-2 border-neon-blue bg-slate-900/40 flex flex-col justify-between">
+                    <div class="text-[10px] text-slate-400 mb-1 font-bold">کل گزارش‌ها</div>
+                    <div class="text-3xl font-black text-white" id="stat-total">0</div>
+                </div>
+                <div class="glass-panel p-4 rounded-lg border-t-2 border-neon-red bg-red-500/5 flex flex-col justify-between relative overflow-hidden">
+                    <div class="absolute -left-2 -bottom-2 text-5xl text-red-500/10"><i class="fa-solid fa-bell"></i></div>
+                    <div class="text-[10px] text-red-400 mb-1 font-bold flex items-center gap-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span> هشدار فوری
+                    </div>
+                    <div class="text-3xl font-black text-neon-red" id="stat-high">0</div>
+                </div>
+            </div>
+
+            <div class="glass-panel rounded-lg flex-1 flex flex-col border border-slate-700 relative overflow-hidden min-h-[250px]">
+                <div class="absolute top-2 right-2 z-[401] bg-black/80 px-2 py-1 rounded text-[10px] text-white backdrop-blur border border-white/10 shadow flex items-center gap-2">
+                    <i class="fa-solid fa-location-crosshairs text-red-500"></i> موقعیت عملیاتی
+                </div>
+                <div id="map" class="w-full h-full bg-slate-900"></div>
+                <div class="absolute inset-0 pointer-events-none" style="background-image: linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 40px 40px; z-index: 400;"></div>
+            </div>
+
+            <div class="glass-panel rounded-lg h-28 p-3 font-mono text-[10px] bg-black/80 border-t border-slate-700 overflow-y-auto text-slate-400" id="terminal-logs">
+                <div class="text-neon-green mb-1">> System Boot Sequence Initiated...</div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        const DATA_SOURCES = [
+            "https://corsproxy.io/?" + encodeURIComponent("https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?output=csv"),
+            "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?output=csv"),
+            "data.csv"
+        ];
+
+        const AHVAZ_COORDS = [31.3183, 48.6706];
+        const LOCATIONS = {
+            "کیانپارس": [31.3464, 48.6861], "کیان آباد": [31.3550, 48.6800], "زیتون": [31.3380, 48.7100],
+            "کوروش": [31.3500, 48.7150], "نادری": [31.3210, 48.6840], "امانیه": [31.3150, 48.6700],
+            "گلستان": [31.3000, 48.6300], "پاداد": [31.2900, 48.7000], "کوت عبدالله": [31.2500, 48.6900],
+            "لشکرآباد": [31.3050, 48.6550], "کمپلو": [31.3100, 48.6400], "عامری": [31.3180, 48.6950],
+            "حصیرآباد": [31.3150, 48.7200], "مرکز": [31.3200, 48.6800]
+        };
+
+        let map, markersLayer, tileLayer; // tileLayer اضافه شد برای رفرش
+        let rawData = [];
+        let isRealOnline = false;
+
+        // --- HEARTBEAT SYSTEM ---
+        async function checkRealConnection() {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 3000);
+                await fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', signal: controller.signal });
+                clearTimeout(timeoutId);
+                return true;
+            } catch (error) { return false; }
+        }
+
+        async function monitorNetwork() {
+            const isOnline = await checkRealConnection();
+            
+            if (isOnline) {
+                if (!isRealOnline) {
+                    log("اتصال اینترنت تایید شد. بازیابی نقشه و دیتا...");
+                    isRealOnline = true;
+                    forceRefresh();
+                    
+                    // --- فیکس نهایی: رفرش کردن نقشه وقتی اینترنت وصل شد ---
+                    if(tileLayer) {
+                        tileLayer.redraw(); // دستور اجباری برای دانلود دوباره عکس‌های نقشه
+                        log("نقشه در حال بروزرسانی...");
+                    }
+                }
+                toggleOfflineWarning(false);
+            } else {
+                if (isRealOnline) {
+                    log("هشدار: قطعی اینترنت شناسایی شد.");
+                    setStatus("قطع اینترنت", "red");
+                    toggleOfflineWarning(true);
+                    isRealOnline = false;
+                    fetchData(2);
+                }
+            }
+        }
+
+        function initMap() {
+            map = L.map('map', { zoomControl: false, attributionControl: false, crs: L.CRS.EPSG3857 })
+                .setView(AHVAZ_COORDS, 12);
+            
+            // ذخیره لایه در متغیر tileLayer برای دسترسی بعدی
+            tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
+            
+            markersLayer = L.layerGroup().addTo(map);
+        }
+
+        function updateMapPins(data) {
+            markersLayer.clearLayers();
+            data.forEach(row => {
+                const meta = parseData(row);
+                if (LOCATIONS[meta.location]) {
+                    const coords = LOCATIONS[meta.location];
+                    let color = '#10b981';
+                    let radius = 6;
+                    if (meta.priority === 'High') {
+                        color = '#f43f5e'; radius = 10;
+                        const pulse = L.divIcon({ className: 'bg-red-500/40 rounded-full border border-red-500 animate-pulse', iconSize: [24,24] });
+                        L.marker(coords, {icon: pulse}).addTo(markersLayer);
+                    } else if (meta.priority === 'Medium') { color = '#eab308'; radius = 8; }
+                    L.circleMarker(coords, { color: color, fillColor: color, fillOpacity: 1, radius: radius })
+                        .bindPopup(`<b style="color:black">${meta.location}</b>`).addTo(markersLayer);
+                }
+            });
+        }
+
+        function fetchData(index = 0) {
+            if (index >= DATA_SOURCES.length) {
+                setStatus("قطع کامل", "red");
+                log("خطا: دیتایی یافت نشد.");
+                return;
+            }
+
+            const url = DATA_SOURCES[index];
+            if (index === 2) {
+                setStatus("حالت آفلاین", "red");
+                toggleOfflineWarning(true);
+            } else {
+                if(!isRealOnline && index < 2) {
+                    fetchData(2);
+                    return;
+                }
+                setStatus("برقراری ارتباط...", "yellow");
+            }
+
+            Papa.parse(url, {
+                download: true, header: true, skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data && results.data.length > 0) {
+                        rawData = results.data;
+                        renderUI(rawData);
+                        if (index < 2) {
+                            setStatus("آنلاین (پایدار)", "green");
+                            isRealOnline = true;
+                        }
+                    } else { fetchData(index + 1); }
+                },
+                error: () => fetchData(index + 1)
+            });
+        }
+
+        function forceRefresh() {
+            log("درخواست بروزرسانی دستی...");
+            fetchData(0);
+        }
+
+        function toggleOfflineWarning(show) {
+            const el = document.getElementById('offline-warning');
+            if (show) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+
+        function renderUI(data) {
+            let high = 0;
+            data.forEach(r => { if(parseData(r).priority === 'High') high++; });
+            document.getElementById('stat-total').innerText = data.length;
+            document.getElementById('stat-high').innerText = high;
+            document.getElementById('last-update').innerText = "بروزرسانی: " + new Date().toLocaleTimeString('fa-IR');
+
+            const container = document.getElementById('reports-container');
+            container.innerHTML = '';
+            
+            [...data].reverse().forEach(row => {
+                if(!row.Title) return;
+                const meta = parseData(row);
+                let cardClass = 'bg-slate-800/40 border border-slate-700/50 hover:bg-slate-800 transition-all';
+                let badgeClass = 'bg-slate-700 text-slate-300';
+                
+                if(meta.priority === 'High') {
+                    cardClass = 'card-high bg-red-900/10 border-red-500/20';
+                    badgeClass = 'bg-red-500 text-white font-bold animate-pulse';
+                } else if(meta.priority === 'Medium') {
+                    cardClass = 'card-medium bg-yellow-900/10 border-yellow-500/20';
+                    badgeClass = 'bg-yellow-600 text-white';
+                }
+
+                const card = document.createElement('div');
+                card.className = `p-3 rounded-lg flex flex-col gap-2 ${cardClass}`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex gap-2 items-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] ${badgeClass}">${meta.priority === 'High' ? 'فوری' : (meta.priority === 'Medium' ? 'مهم' : 'عادی')}</span>
+                            <span class="text-[10px] text-slate-400">${meta.category}</span>
+                        </div>
+                        ${meta.location !== 'نامشخص' ? `<span class="text-[10px] text-blue-400 bg-blue-900/20 px-2 py-0.5 rounded border border-blue-900/50">${meta.location}</span>` : ''}
+                    </div>
+                    <h3 class="font-bold text-white text-sm leading-snug">${row.Title}</h3>
+                    <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed opacity-80">${row.Content}</p>
+                    <div class="flex justify-between items-center mt-1 pt-2 border-t border-white/5">
+                        <a href="${row.Source}" target="_blank" class="text-[10px] text-slate-500 hover:text-white transition font-mono truncate max-w-[150px]"><i class="fa-solid fa-link mr-1"></i>${formatSource(row.Source)}</a>
+                        ${meta.action ? `<span class="text-[10px] text-neon-green flex items-center gap-1"><i class="fa-solid fa-check-double"></i> ${meta.action}</span>` : ''}
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+            updateMapPins(data);
+        }
+
+        function parseData(row) {
+            if(!row.Result) return { priority: 'Low', category: 'عمومی', location: 'نامشخص' };
+            const clean = row.Result.replace(/\n/g, " | ");
+            let priority = 'Low';
+            if(/High|بالا|فوری|قرمز/i.test(clean)) priority = 'High';
+            else if(/Medium|متوسط|زرد/i.test(clean)) priority = 'Medium';
+            let category = 'عمومی';
+            const catMatch = clean.match(/موضوع\s*[:]\s*(.*?)(?=\||$|اولویت|اقدام)/);
+            if(catMatch) category = catMatch[1].trim();
+            let action = null;
+            const actMatch = clean.match(/اقدام\s*[:]\s*(.*?)(?=\||$)/);
+            if(actMatch) action = actMatch[1].trim();
+            let location = 'نامشخص';
+            const locMatch = clean.match(/محله\s*[:]\s*(.*?)(?=\||$)/);
+            if(locMatch) location = locMatch[1].trim();
+            else { for(let key in LOCATIONS) { if(clean.includes(key)) { location = key; break; } } }
+            return { priority, category, action, location };
+        }
+
+        function formatSource(url) {
+            if(!url) return '---';
+            if(url.includes('t.me')) return '@' + url.split('/').pop().split('?')[0];
+            return 'Web Source';
+        }
+
+        function setStatus(text, color) {
+            const dot = document.getElementById('status-dot');
+            const txt = document.getElementById('status-text');
+            const box = document.getElementById('connection-box');
+            txt.innerText = text;
+            if(color === 'green') {
+                dot.className = "w-2 h-2 rounded-full bg-green-500 animate-pulse";
+                txt.className = "text-[10px] font-bold text-green-500";
+                box.className = "bg-green-900/20 border border-green-500/30 px-3 py-1.5 rounded flex items-center gap-2";
+            } else if(color === 'red') {
+                dot.className = "w-2 h-2 rounded-full bg-red-500";
+                txt.className = "text-[10px] font-bold text-red-500";
+                box.className = "bg-red-900/20 border border-red-500/30 px-3 py-1.5 rounded flex items-center gap-2";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-yellow-500 animate-pulse";
+                txt.className = "text-[10px] font-bold text-yellow-500";
+                box.className = "bg-yellow-900/20 border border-yellow-500/30 px-3 py-1.5 rounded flex items-center gap-2";
+            }
+        }
+
+        function log(msg) {
+            const term = document.getElementById('terminal-logs');
+            const d = document.createElement('div');
+            d.innerHTML = `<span class="text-slate-600">[${new Date().toLocaleTimeString('en-GB')}]</span> ${msg}`;
+            term.appendChild(d);
+            term.scrollTop = term.scrollHeight;
+        }
+
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const term = e.target.value.toLowerCase();
+            const filtered = rawData.filter(r => JSON.stringify(r).toLowerCase().includes(term));
+            renderUI(filtered);
+        });
+
+        window.onload = () => {
+            initMap();
+            monitorNetwork(); 
+            fetchData();
+            setInterval(() => document.getElementById('clock').innerText = new Date().toLocaleTimeString('fa-IR'), 1000);
+            setInterval(monitorNetwork, 5000);
+            setInterval(() => { if(isRealOnline) fetchData(); }, 60000);
+        };
+    </script>
+</body>
+</html>
