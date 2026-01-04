@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مرکز فرماندهی داده | Data Command Center</title>
+
+    <script src="assets/tailwind.js"></script>
+    <script src="assets/papaparse.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Vazirmatn', 'sans-serif'] },
+                    colors: {
+                        'mil-dark': '#0b1120',
+                        'mil-card': '#1e293b',
+                        'neon-blue': '#3b82f6',
+                        'neon-green': '#10b981',
+                        'neon-red': '#ef4444',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            background-color: #020617;
+            color: #e2e8f0;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .loading-overlay {
+            position: fixed;
+            inset: 0;
+            background: #020617;
+            z-index: 50;
+            display: flex;
+            justify-content: center;
+            items-align: center;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex flex-col p-4 md:p-6 gap-6">
+
+    <header class="flex justify-between items-center border-b border-slate-800 pb-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded bg-blue-600/20 flex items-center justify-center text-blue-400">
+                <i class="fa-solid fa-chart-line text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-black text-white tracking-wide">RADAR <span
+                        class="text-blue-500">ANALYTICS</span></h1>
+                <p class="text-xs text-slate-500">داشبورد تحلیل رفتار کاربران</p>
+            </div>
+        </div>
+        <div class="flex gap-3">
+            <div class="text-right hidden md:block">
+                <div class="text-xs text-slate-400">آخرین بروزرسانی</div>
+                <div class="text-sm font-mono text-green-400" id="last-update">--:--:--</div>
+            </div>
+            <button onclick="fetchData()"
+                class="bg-slate-800 hover:bg-slate-700 text-white px-4 rounded border border-slate-700 transition">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="glass-panel rounded-xl p-5 relative overflow-hidden group">
+            <div class="absolute -right-4 -top-4 text-6xl text-blue-500/10 group-hover:scale-110 transition"><i
+                    class="fa-solid fa-users"></i></div>
+            <div class="text-slate-400 text-xs font-bold uppercase mb-1">بازدید کل (Total Hits)</div>
+            <div class="text-3xl font-black text-white" id="kpi-total">0</div>
+            <div
+                class="mt-2 text-[10px] text-blue-400 bg-blue-500/10 inline-block px-2 py-0.5 rounded border border-blue-500/20">
+                شامل بازدیدهای تکراری
+            </div>
+        </div>
+
+        <div class="glass-panel rounded-xl p-5 relative overflow-hidden group">
+            <div class="absolute -right-4 -top-4 text-6xl text-green-500/10 group-hover:scale-110 transition"><i
+                    class="fa-solid fa-fingerprint"></i></div>
+            <div class="text-slate-400 text-xs font-bold uppercase mb-1">کاربران یکتا (Unique)</div>
+            <div class="text-3xl font-black text-green-400" id="kpi-unique">0</div>
+            <div
+                class="mt-2 text-[10px] text-green-400 bg-green-500/10 inline-block px-2 py-0.5 rounded border border-green-500/20">
+                شناسایی شده با اثر انگشت
+            </div>
+        </div>
+
+        <div class="glass-panel rounded-xl p-5 relative overflow-hidden group">
+            <div class="absolute -right-4 -top-4 text-6xl text-purple-500/10 group-hover:scale-110 transition"><i
+                    class="fa-solid fa-mobile-screen"></i></div>
+            <div class="text-slate-400 text-xs font-bold uppercase mb-1">سهم موبایل</div>
+            <div class="text-3xl font-black text-purple-400" id="kpi-mobile">0%</div>
+            <div class="w-full bg-slate-700 h-1 rounded-full mt-3 overflow-hidden">
+                <div class="bg-purple-500 h-full" id="bar-mobile" style="width: 0%"></div>
+            </div>
+        </div>
+
+        <div class="glass-panel rounded-xl p-5 relative overflow-hidden group">
+            <div class="absolute -right-4 -top-4 text-6xl text-orange-500/10 group-hover:scale-110 transition"><i
+                    class="fa-solid fa-earth-americas"></i></div>
+            <div class="text-slate-400 text-xs font-bold uppercase mb-1">کشور برتر</div>
+            <div class="text-3xl font-black text-orange-400" id="kpi-country">---</div>
+            <div class="mt-2 text-[10px] text-slate-500 truncate" id="kpi-country-detail">بیشترین ترافیک ورودی</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[400px]">
+        <div class="glass-panel rounded-xl p-5 col-span-2 flex flex-col">
+            <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                <i class="fa-solid fa-arrow-trend-up text-blue-500"></i> روند بازدید (۷ روز اخیر)
+            </h3>
+            <div class="flex-1 relative">
+                <canvas id="trendChart"></canvas>
+            </div>
+        </div>
+
+        <div class="glass-panel rounded-xl p-5 flex flex-col">
+            <h3 class="text-sm font-bold text-slate-300 mb-4 flex items-center gap-2">
+                <i class="fa-brands fa-linux text-yellow-500"></i> سیستم عامل‌ها
+            </h3>
+            <div class="flex-1 relative flex items-center justify-center">
+                <canvas id="osChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="glass-panel rounded-xl overflow-hidden flex flex-col flex-1">
+        <div class="p-4 border-b border-slate-700 bg-slate-800/50">
+            <h3 class="text-sm font-bold text-white"><i class="fa-solid fa-list-ul mr-2 text-slate-400"></i>آخرین
+                فعالیت‌ها (Log)</h3>
+        </div>
+        <div class="overflow-x-auto flex-1 custom-scroll">
+            <table class="w-full text-right text-sm text-slate-400">
+                <thead class="text-xs text-slate-500 uppercase bg-slate-900 sticky top-0">
+                    <tr>
+                        <th class="px-6 py-3">زمان</th>
+                        <th class="px-6 py-3">کاربر (ID)</th>
+                        <th class="px-6 py-3">مکان</th>
+                        <th class="px-6 py-3">دستگاه / OS</th>
+                        <th class="px-6 py-3">مرورگر</th>
+                        <th class="px-6 py-3 text-center">جلسات</th>
+                    </tr>
+                </thead>
+                <tbody id="table-body" class="divide-y divide-slate-700/50">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+
+        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?gid=804484002&single=true&output=csv";
+
+        // لیست پروکسی‌ها به ترتیب اولویت (اولی در ایران بهتر کار می‌کند)
+const PROXIES = [
+            (url) => "https://corsproxy.io/?" + encodeURIComponent(url + "&_t=" + Date.now()),
+            (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url + "&_t=" + Date.now()),
+            (url) => url + "&_t=" + Date.now()
+        ];
+
+        let trendChartInstance = null;
+        let osChartInstance = null;
+
+        // تمیزکاری متن‌ها
+        const cleanStr = (str) => {
+            if (!str) return 'Unknown';
+            return str.replace(/^"+|"+$/g, '').trim();
+        };
+
+        const formatDate = (isoString) => {
+            if (!isoString) return '-';
+            try {
+                const date = new Date(isoString);
+                return date.toLocaleDateString('fa-IR', {
+                    month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+                });
+            } catch (e) { return isoString; }
+        };
+
+        // تابع اصلی دریافت دیتا با قابلیت تعویض پروکسی
+        function fetchData(proxyIndex = 0) {
+            const btn = document.querySelector('button i');
+            btn.classList.add('fa-spin');
+
+            // اگر همه پروکسی‌ها را تست کرد و نشد
+            if (proxyIndex >= PROXIES.length) {
+                console.error("All proxies failed.");
+                alert("خطا در برقراری ارتباط. لطفاً اتصال اینترنت خود را بررسی کنید.");
+                btn.classList.remove('fa-spin');
+                return;
+            }
+
+            // ساخت لینک با پروکسی فعلی
+            const finalUrl = PROXIES[proxyIndex](CSV_URL);
+            console.log(`Trying Connection Method ${proxyIndex + 1}...`);
+
+            Papa.parse(finalUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                complete: (results) => {
+                    if (results.data && results.data.length > 0) {
+                        console.log("Data received successfully ✅");
+                        processData(results.data);
+                        btn.classList.remove('fa-spin');
+                    } else {
+                        // اگر دیتا خالی بود، برو بعدی
+                        fetchData(proxyIndex + 1);
+                    }
+                },
+                error: (err) => {
+                    console.warn(`Method ${proxyIndex + 1} failed. Switching...`);
+                    // اگر ارور داد، برو پروکسی بعدی
+                    fetchData(proxyIndex + 1);
+                }
+            });
+        }
+
+        function processData(data) {
+            const rows = data.reverse();
+
+            // --- 1. محاسبه KPI ها ---
+            const totalVisits = rows.length;
+            const uniqueUsers = new Set(rows.map(r => r.VisitorID).filter(Boolean)).size;
+
+            // محاسبه موبایل (تشخیص ?1 و ?0)
+            const mobileCount = rows.filter(r => r['Is Mobile'] && r['Is Mobile'].includes('1')).length;
+            const mobilePercentage = totalVisits > 0 ? Math.round((mobileCount / totalVisits) * 100) : 0;
+
+            // محاسبه کشور برتر
+            const countries = {};
+            rows.forEach(r => {
+                const c = r.Country || 'Unknown';
+                countries[c] = (countries[c] || 0) + 1;
+            });
+            const topCountry = Object.keys(countries).reduce((a, b) => countries[a] > countries[b] ? a : b, '---');
+
+            // آپدیت UI کارت‌ها
+            safeSetText('kpi-total', totalVisits.toLocaleString());
+            safeSetText('kpi-unique', uniqueUsers.toLocaleString());
+            safeSetText('kpi-mobile', mobilePercentage + "%");
+            if (document.getElementById('bar-mobile')) document.getElementById('bar-mobile').style.width = mobilePercentage + "%";
+            safeSetText('kpi-country', topCountry);
+            safeSetText('kpi-country-detail', `${countries[topCountry] || 0} بازدید از ${topCountry}`);
+            safeSetText('last-update', new Date().toLocaleTimeString('fa-IR'));
+
+            // --- 2. آپدیت جدول ---
+            const tbody = document.getElementById('table-body');
+            if (tbody) {
+                tbody.innerHTML = '';
+                rows.slice(0, 50).forEach(row => {
+                    if (!row.TimeStamp) return;
+
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-slate-800/30 transition duration-150";
+
+                    const osClean = cleanStr(row.OS);
+                    // تمیز کردن نام مرورگر
+                    let browserClean = cleanStr(row.Browser);
+                    if (browserClean.includes('Chrome')) browserClean = 'Chrome';
+                    else if (browserClean.includes('Firefox')) browserClean = 'Firefox';
+                    else if (browserClean.includes('Safari')) browserClean = 'Safari';
+
+                    const isMobile = row['Is Mobile'] && row['Is Mobile'].includes('1');
+                    const deviceIcon = isMobile ? '<i class="fa-solid fa-mobile-screen-button text-purple-400"></i>' : '<i class="fa-solid fa-desktop text-slate-500"></i>';
+
+                    // تشخیص پرچم (ساده)
+                    const countryCode = row.Country || 'IR';
+
+                    tr.innerHTML = `
+                        <td class="px-6 py-4 font-mono text-xs text-slate-300" dir="ltr">${formatDate(row.TimeStamp)}</td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-white font-bold border border-slate-600">
+                                    ${row.VisitorID ? row.VisitorID.substr(5, 2).toUpperCase() : '?'}
+                                </div>
+                                <span class="text-xs font-mono text-slate-400" title="${row.VisitorID}">${row.VisitorID ? row.VisitorID.substr(0, 8) + '...' : 'Guest'}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="bg-slate-800 border border-slate-700 text-white text-[10px] font-bold px-2 py-0.5 rounded ml-1">${countryCode}</span>
+                        </td>
+                        <td class="px-6 py-4 text-xs">
+                            ${deviceIcon} <span class="ml-1">${osClean}</span>
+                        </td>
+                        <td class="px-6 py-4 text-xs text-slate-400">${browserClean}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="bg-blue-500/10 text-blue-400 text-[10px] px-2 py-1 rounded font-mono">${row.SessionCount || 1}</span>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+
+            // --- 3. رسم نمودارها ---
+            renderCharts(rows);
+        }
+
+        function safeSetText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.innerText = text;
+        }
+
+        function renderCharts(rows) {
+            // Trend Data
+            const dateCounts = {};
+            // مرتب سازی از قدیمی به جدید برای چارت
+            [...rows].reverse().forEach(r => {
+                if (!r.TimeStamp) return;
+                try {
+                    const date = new Date(r.TimeStamp).toLocaleDateString('fa-IR', { month: '2-digit', day: '2-digit' });
+                    dateCounts[date] = (dateCounts[date] || 0) + 1;
+                } catch (e) { }
+            });
+
+            // OS Data
+            const osCounts = {};
+            rows.forEach(r => {
+                const os = cleanStr(r.OS) || 'Other';
+                osCounts[os] = (osCounts[os] || 0) + 1;
+            });
+
+            Chart.defaults.color = '#94a3b8';
+            Chart.defaults.font.family = 'Vazirmatn';
+
+            // Trend Chart
+            const ctxTrend = document.getElementById('trendChart');
+            if (ctxTrend) {
+                if (trendChartInstance) trendChartInstance.destroy();
+                trendChartInstance = new Chart(ctxTrend.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: Object.keys(dateCounts),
+                        datasets: [{
+                            label: 'بازدید',
+                            data: Object.values(dateCounts),
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointBackgroundColor: '#1e293b',
+                            pointBorderColor: '#3b82f6'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            y: { grid: { color: '#334155' }, beginAtZero: true, ticks: { stepSize: 1 } },
+                            x: { grid: { display: false } }
+                        }
+                    }
+                });
+            }
+
+            // OS Chart
+            const ctxOS = document.getElementById('osChart');
+            if (ctxOS) {
+                if (osChartInstance) osChartInstance.destroy();
+                osChartInstance = new Chart(ctxOS.getContext('2d'), {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(osCounts),
+                        datasets: [{
+                            data: Object.values(osCounts),
+                            backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '75%',
+                        plugins: {
+                            legend: { position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 10 } } }
+                        }
+                    }
+                });
+            }
+        }
+
+        // شروع برنامه
+        window.onload = () => fetchData(0);
+        setInterval(() => fetchData(0), 60000);
+
+    </script>
+</body>
+
+</html>
