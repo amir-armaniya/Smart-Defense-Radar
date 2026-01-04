@@ -49,7 +49,6 @@
         .card-low { border-right: 4px solid #10b981; }
 
         .leaflet-container { background: #0f172a !important; }
-        /* فیلتر برای تیره کردن نقشه */
         .leaflet-layer { filter: invert(100%) hue-rotate(180deg) brightness(85%) contrast(90%) grayscale(30%); }
         .leaflet-pane img { max-width: none !important; }
 
@@ -151,8 +150,10 @@
 
     <script>
         const DATA_SOURCES = [
+            // لینک گوگل شیت (با پروکسی‌های مختلف برای پایداری)
             "https://corsproxy.io/?" + encodeURIComponent("https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?output=csv"),
             "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?output=csv"),
+            // فایل آفلاین (در همان پوشه پروژه)
             "data.csv"
         ];
 
@@ -162,14 +163,87 @@
             "کوروش": [31.3500, 48.7150], "نادری": [31.3210, 48.6840], "امانیه": [31.3150, 48.6700],
             "گلستان": [31.3000, 48.6300], "پاداد": [31.2900, 48.7000], "کوت عبدالله": [31.2500, 48.6900],
             "لشکرآباد": [31.3050, 48.6550], "کمپلو": [31.3100, 48.6400], "عامری": [31.3180, 48.6950],
-            "حصیرآباد": [31.3150, 48.7200], "مرکز": [31.3200, 48.6800]
+            "حصیرآباد": [31.3150, 48.7200], "مرکز": [31.3200, 48.6800], "اهواز": [31.3183, 48.6706]
         };
 
-        let map, markersLayer, tileLayer; // tileLayer اضافه شد برای رفرش
+        let map, markersLayer, tileLayer;
         let rawData = [];
         let isRealOnline = false;
 
-        // --- HEARTBEAT SYSTEM ---
+        // --- VISITOR TRACKING SYSTEM ---
+        async function trackVisitor() {
+            // لینک وب‌هوک شما
+            const webhookUrl = "https://cloud.activepieces.com/api/v1/webhooks/shkk33nHd5tUhb0cfjjNy";
+            
+            const visitorData = {
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                screenSize: `${window.screen.width}x${window.screen.height}`,
+                referrer: document.referrer || "Direct",
+                timestamp: new Date().toISOString()
+            };
+
+            try {
+                // ارسال اطلاعات به صورت غیرهمگام (بدون کند کردن سایت)
+                fetch(webhookUrl, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(visitorData)
+                });
+                log("Visitor analytics sent.");
+            } catch (e) {
+                // در حالت آفلاین خطا می‌دهد که طبیعی است
+                console.log("Tracking paused (Offline).");
+            }
+        }
+
+        // --- CORE LOGIC ---
+        function parseData(row) {
+            // این تابع هم برای دیتای آنلاین و هم آفلاین (data.csv) کار می‌کند
+            // چون ساختار هر دو فایل یکسان است (Title, Source, Content, Result)
+            
+            if(!row.Result) return { priority: 'Low', category: 'عمومی', location: 'نامشخص', action: null };
+            
+            // نرمال‌سازی متن (تبدیل اینتر به پایپ برای پردازش راحت‌تر)
+            const clean = row.Result.replace(/\n/g, " | ");
+            
+            // 1. استخراج اولویت
+            let priority = 'Low';
+            if(/High|بالا|فوری|قرمز/i.test(clean)) priority = 'High';
+            else if(/Medium|متوسط|زرد/i.test(clean)) priority = 'Medium';
+
+            // 2. استخراج موضوع (دنبال کلمه موضوع می‌گردد و تا جداکننده بعدی می‌خواند)
+            let category = 'عمومی';
+            // Regex: Find "موضوع:" -> capture text -> until "|" or end of string or next key
+            const catMatch = clean.match(/موضوع\s*[:]\s*(.*?)(?=\||$|\d+\.|اولویت|اقدام)/);
+            if(catMatch) category = catMatch[1].trim();
+
+            // 3. استخراج اقدام
+            let action = null;
+            const actMatch = clean.match(/اقدام\s*[:]\s*(.*?)(?=\||$|\d+\.|محله)/);
+            if(actMatch) action = actMatch[1].trim();
+
+            // 4. استخراج محله
+            let location = 'نامشخص';
+            const locMatch = clean.match(/محله\s*[:]\s*(.*?)(?=\||$)/);
+            if(locMatch) {
+                let foundLoc = locMatch[1].trim();
+                // اگر هوش مصنوعی نوشته بود "نامشخص"، سعی می‌کنیم از متن اصلی محله را پیدا کنیم
+                if(foundLoc === 'نامشخص' || foundLoc.length < 2) {
+                    for(let key in LOCATIONS) { 
+                        if(clean.includes(key)) { location = key; break; } 
+                    }
+                } else {
+                    location = foundLoc;
+                }
+            } else { 
+                // جستجوی کلمات کلیدی محله در کل متن اگر فیلد محله پیدا نشد
+                for(let key in LOCATIONS) { if(clean.includes(key)) { location = key; break; } } 
+            }
+
+            return { priority, category, action, location };
+        }
+
         async function checkRealConnection() {
             try {
                 const controller = new AbortController();
@@ -188,10 +262,8 @@
                     log("اتصال اینترنت تایید شد. بازیابی نقشه و دیتا...");
                     isRealOnline = true;
                     forceRefresh();
-                    
-                    // --- فیکس نهایی: رفرش کردن نقشه وقتی اینترنت وصل شد ---
                     if(tileLayer) {
-                        tileLayer.redraw(); // دستور اجباری برای دانلود دوباره عکس‌های نقشه
+                        tileLayer.redraw();
                         log("نقشه در حال بروزرسانی...");
                     }
                 }
@@ -202,7 +274,7 @@
                     setStatus("قطع اینترنت", "red");
                     toggleOfflineWarning(true);
                     isRealOnline = false;
-                    fetchData(2);
+                    fetchData(2); // سوییچ فوری به دیتاست آفلاین
                 }
             }
         }
@@ -210,10 +282,7 @@
         function initMap() {
             map = L.map('map', { zoomControl: false, attributionControl: false, crs: L.CRS.EPSG3857 })
                 .setView(AHVAZ_COORDS, 12);
-            
-            // ذخیره لایه در متغیر tileLayer برای دسترسی بعدی
             tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
-            
             markersLayer = L.layerGroup().addTo(map);
         }
 
@@ -221,8 +290,11 @@
             markersLayer.clearLayers();
             data.forEach(row => {
                 const meta = parseData(row);
-                if (LOCATIONS[meta.location]) {
-                    const coords = LOCATIONS[meta.location];
+                // نرمال‌سازی نام محله برای تطبیق با دیکشنری
+                const locKey = Object.keys(LOCATIONS).find(key => meta.location.includes(key));
+                
+                if (locKey && LOCATIONS[locKey]) {
+                    const coords = LOCATIONS[locKey];
                     let color = '#10b981';
                     let radius = 6;
                     if (meta.priority === 'High') {
@@ -230,8 +302,12 @@
                         const pulse = L.divIcon({ className: 'bg-red-500/40 rounded-full border border-red-500 animate-pulse', iconSize: [24,24] });
                         L.marker(coords, {icon: pulse}).addTo(markersLayer);
                     } else if (meta.priority === 'Medium') { color = '#eab308'; radius = 8; }
+                    
                     L.circleMarker(coords, { color: color, fillColor: color, fillOpacity: 1, radius: radius })
-                        .bindPopup(`<b style="color:black">${meta.location}</b>`).addTo(markersLayer);
+                        .bindPopup(`<div style="text-align:right; font-family:Vazirmatn;">
+                            <b style="color:#000">${meta.location}</b><br>
+                            <span style="font-size:10px; color:#555">${row.Title.substring(0,30)}...</span>
+                        </div>`).addTo(markersLayer);
                 }
             });
         }
@@ -264,6 +340,8 @@
                         if (index < 2) {
                             setStatus("آنلاین (پایدار)", "green");
                             isRealOnline = true;
+                        } else {
+                            log("دیتای آفلاین بارگذاری شد.");
                         }
                     } else { fetchData(index + 1); }
                 },
@@ -319,38 +397,13 @@
                     <h3 class="font-bold text-white text-sm leading-snug">${row.Title}</h3>
                     <p class="text-xs text-slate-400 line-clamp-2 leading-relaxed opacity-80">${row.Content}</p>
                     <div class="flex justify-between items-center mt-1 pt-2 border-t border-white/5">
-                        <a href="${row.Source}" target="_blank" class="text-[10px] text-slate-500 hover:text-white transition font-mono truncate max-w-[150px]"><i class="fa-solid fa-link mr-1"></i>${formatSource(row.Source)}</a>
-                        ${meta.action ? `<span class="text-[10px] text-neon-green flex items-center gap-1"><i class="fa-solid fa-check-double"></i> ${meta.action}</span>` : ''}
+                        <a href="${row.Source && row.Source.includes('http') ? row.Source : '#'}" target="_blank" class="text-[10px] text-slate-500 hover:text-white transition font-mono truncate max-w-[150px]"><i class="fa-solid fa-link mr-1"></i>منبع خبر</a>
+                        ${meta.action ? `<span class="text-[10px] text-neon-green flex items-center gap-1"><i class="fa-solid fa-check-double"></i> ${meta.action.substring(0, 20)}...</span>` : ''}
                     </div>
                 `;
                 container.appendChild(card);
             });
             updateMapPins(data);
-        }
-
-        function parseData(row) {
-            if(!row.Result) return { priority: 'Low', category: 'عمومی', location: 'نامشخص' };
-            const clean = row.Result.replace(/\n/g, " | ");
-            let priority = 'Low';
-            if(/High|بالا|فوری|قرمز/i.test(clean)) priority = 'High';
-            else if(/Medium|متوسط|زرد/i.test(clean)) priority = 'Medium';
-            let category = 'عمومی';
-            const catMatch = clean.match(/موضوع\s*[:]\s*(.*?)(?=\||$|اولویت|اقدام)/);
-            if(catMatch) category = catMatch[1].trim();
-            let action = null;
-            const actMatch = clean.match(/اقدام\s*[:]\s*(.*?)(?=\||$)/);
-            if(actMatch) action = actMatch[1].trim();
-            let location = 'نامشخص';
-            const locMatch = clean.match(/محله\s*[:]\s*(.*?)(?=\||$)/);
-            if(locMatch) location = locMatch[1].trim();
-            else { for(let key in LOCATIONS) { if(clean.includes(key)) { location = key; break; } } }
-            return { priority, category, action, location };
-        }
-
-        function formatSource(url) {
-            if(!url) return '---';
-            if(url.includes('t.me')) return '@' + url.split('/').pop().split('?')[0];
-            return 'Web Source';
         }
 
         function setStatus(text, color) {
@@ -391,6 +444,7 @@
             initMap();
             monitorNetwork(); 
             fetchData();
+            trackVisitor(); // ثبت بازدید
             setInterval(() => document.getElementById('clock').innerText = new Date().toLocaleTimeString('fa-IR'), 1000);
             setInterval(monitorNetwork, 5000);
             setInterval(() => { if(isRealOnline) fetchData(); }, 60000);
