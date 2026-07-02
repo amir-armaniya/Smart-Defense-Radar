@@ -165,14 +165,7 @@
 
     <script>
 
-        const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms/pub?gid=804484002&single=true&output=csv";
-
-        // لیست پروکسی‌ها به ترتیب اولویت (اولی در ایران بهتر کار می‌کند)
-const PROXIES = [
-            (url) => "https://corsproxy.io/?" + encodeURIComponent(url + "&_t=" + Date.now()),
-            (url) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(url + "&_t=" + Date.now()),
-            (url) => url + "&_t=" + Date.now()
-        ];
+        const CSV_URL = "/api/analytics";
 
         let trendChartInstance = null;
         let osChartInstance = null;
@@ -194,41 +187,25 @@ const PROXIES = [
         };
 
         // تابع اصلی دریافت دیتا با قابلیت تعویض پروکسی
-        function fetchData(proxyIndex = 0) {
+        function fetchData() {
             const btn = document.querySelector('button i');
             btn.classList.add('fa-spin');
 
-            // اگر همه پروکسی‌ها را تست کرد و نشد
-            if (proxyIndex >= PROXIES.length) {
-                console.error("All proxies failed.");
-                alert("خطا در برقراری ارتباط. لطفاً اتصال اینترنت خود را بررسی کنید.");
-                btn.classList.remove('fa-spin');
-                return;
-            }
-
-            // ساخت لینک با پروکسی فعلی
-            const finalUrl = PROXIES[proxyIndex](CSV_URL);
-            console.log(`Trying Connection Method ${proxyIndex + 1}...`);
-
-            Papa.parse(finalUrl, {
-                download: true,
-                header: true,
-                skipEmptyLines: true,
-                complete: (results) => {
-                    if (results.data && results.data.length > 0) {
-                        console.log("Data received successfully ✅");
-                        processData(results.data);
-                        btn.classList.remove('fa-spin');
-                    } else {
-                        // اگر دیتا خالی بود، برو بعدی
-                        fetchData(proxyIndex + 1);
-                    }
-                },
-                error: (err) => {
-                    console.warn(`Method ${proxyIndex + 1} failed. Switching...`);
-                    // اگر ارور داد، برو پروکسی بعدی
-                    fetchData(proxyIndex + 1);
+            fetch(CSV_URL).then(r => r.text()).then(text => {
+                if (!text || text.trim().length === 0) {
+                    alert("داده‌ای یافت نشد.");
+                    btn.classList.remove('fa-spin');
+                    return;
                 }
+                const results = Papa.parse(text, { header: true, skipEmptyLines: true });
+                if (results.data && results.data.length > 0) {
+                    processData(results.data);
+                }
+                btn.classList.remove('fa-spin');
+            }).catch(err => {
+                console.error("Fetch error:", err);
+                alert("خطا در برقراری ارتباط.");
+                btn.classList.remove('fa-spin');
             });
         }
 
@@ -399,8 +376,8 @@ const PROXIES = [
         }
 
         // شروع برنامه
-        window.onload = () => fetchData(0);
-        setInterval(() => fetchData(0), 60000);
+        window.onload = () => fetchData();
+        setInterval(() => fetchData(), 60000);
 
     </script>
 </body>
