@@ -300,20 +300,22 @@
                 setStatus("برقراری ارتباط...", "yellow");
             }
 
-            Papa.parse(url, {
-                download: true, header: true, skipEmptyLines: true,
-                complete: (results) => {
-                    if (results.data && results.data.length > 0) {
-                        rawData = results.data;
-                        renderUI(rawData);
-                        if (index < 2) {
-                            setStatus("آنلاین (پایدار)", "green");
-                            isRealOnline = true;
-                        }
-                    } else { fetchData(index + 1); }
-                },
-                error: () => fetchData(index + 1)
-            });
+            fetch(url).then(r => r.text()).then(text => {
+                if (!text || text.trim().length === 0) { fetchData(index + 1); return; }
+                // Add CSV header if missing
+                if (!text.trimStart().startsWith("Title")) {
+                    text = "Title,Source,Content,Result\n" + text;
+                }
+                const results = Papa.parse(text, { header: true, skipEmptyLines: true });
+                if (results.data && results.data.length > 0) {
+                    rawData = results.data;
+                    renderUI(rawData);
+                    if (index < 2) {
+                        setStatus("آنلاین (پایدار)", "green");
+                        isRealOnline = true;
+                    }
+                } else { fetchData(index + 1); }
+            }).catch(() => fetchData(index + 1));
         }
 
         function forceRefresh() {
