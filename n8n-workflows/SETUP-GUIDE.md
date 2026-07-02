@@ -1,53 +1,91 @@
-# n8n Setup Guide — Smart Defense Radar Backend
+# Backend Setup Guide — Smart Defense Radar
 
-## Step 1: Create n8n Cloud Account
-1. Go to https://app.n8n.cloud/register
-2. Sign up (free, no credit card needed)
-3. Note your instance URL: `https://your-name.app.n8n.cloud`
+## Current Backend: ActivePieces Cloud
 
-## Step 2: Add Credentials
+The production backend uses **ActivePieces** for data pipeline automation. The n8n workflow below is kept as a reference alternative.
 
-### OpenRouter API Key
-1. In n8n: Settings → Credentials → Add Credential
-2. Search "Header Auth"
-3. Name: `OpenRouter API`
-4. Header Name: `Authorization`
-5. Header Value: `Bearer sk-or-YOUR_KEY_HERE`
-6. Save
+### ActivePieces Setup (Production)
 
-### Google Sheets OAuth2
-1. In n8n: Settings → Credentials → Add Credential
-2. Search "Google Sheets OAuth2"
-3. Follow OAuth flow to connect your Google account
-4. Make sure the spreadsheet `2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms` is accessible
+1. Sign up at https://activepieces.com (free tier)
+2. Create a new flow with **RSS Trigger** pointing to `https://tg.i-c-a.su/rss/khozkhabar`
+3. Add **OpenRouter** piece for AI analysis
+4. Add **Google Sheets** piece to write results
+5. Activate the flow
 
-## Step 3: Import Workflow
-1. In n8n: Click "+" → Import from File
-2. Select `tg-monitor-workflow.json` from this folder
-3. The workflow will appear in your editor
+### Analytics Webhook
 
-## Step 4: Configure Credentials in Workflow
-1. Click on "AI Analysis (OpenRouter)" node
-2. Under Authentication, select your `OpenRouter API` credential
-3. Click on "Write to Google Sheets" node
-4. Under Credentials, select your `Google Sheets OAuth2` credential
-5. Verify the spreadsheet URL matches
+ActivePieces webhook URL for visitor tracking:
+```
+https://cloud.activepieces.com/api/v1/webhooks/w8NAUJhlhnTagon6awYuo
+```
 
-## Step 5: Test
-1. Click "Execute Workflow" button
-2. Check each node's output
-3. Verify a new row appears in your Google Sheets
+This is called from `index.html` on page load.
 
-## Step 6: Activate
-1. Toggle the workflow to "Active" (top-right switch)
-2. It will now run every hour automatically
+---
 
-## Execution Budget
+## n8n Alternative (Reference)
+
+> **Note:** n8n Cloud was tested but RSS sources (rsshub.app, tg.i-c-a.su) are blocked by Cloudflare from n8n's servers. The workflow is kept for reference if a self-hosted n8n instance is available.
+
+### n8n Cloud Setup
+
+1. Sign up at https://app.n8n.cloud (free, 2,000 executions/month)
+2. Import `tg-monitor-workflow.json`
+3. Add credentials:
+   - **OpenRouter API** (Header Auth: `Authorization: Bearer sk-or-...`)
+   - **Google Sheets OAuth2**
+4. Activate the workflow
+
+### Execution Budget
 - 24 executions/day × 30 days = ~720/month
 - Well within n8n Cloud free tier (2,000/month)
-- Leaves ~1,280 executions for other workflows
 
-## Troubleshooting
-- **RSS feed empty**: rsshub.app may be blocked in Iran. Use a VPN or alternative RSS source.
-- **Google Sheets error**: Re-authenticate OAuth2 credential
-- **OpenRouter error**: Check API key balance at openrouter.ai
+### Known Issue
+RSS feeds from `rsshub.app` and `tg.i-c-a.su` return Cloudflare challenge pages when accessed from n8n Cloud servers. Use ActivePieces or a self-hosted n8n instance instead.
+
+---
+
+## Cloudflare Worker Proxy
+
+The Worker (`src/index.js`) provides two proxy endpoints:
+
+### `/api/data`
+Proxies the main Google Sheets CSV (crisis reports).
+- Auto-prepends CSV header if missing
+- Returns with CORS headers
+
+### `/api/analytics`
+Proxies the analytics Google Sheets CSV.
+- Auto-prepends CSV header if missing
+- Returns with CORS headers
+
+### Deploy
+```bash
+npx wrangler deploy
+```
+
+---
+
+## Google Sheets Structure
+
+### Sheet 1 (gid=0): Crisis Reports
+| Column | Description |
+|---|---|
+| Title | Post title/headline |
+| Source | Telegram post URL |
+| Content | Full post content |
+| Result | AI analysis (topic, priority, action, location) |
+
+### Sheet 2 (gid=804484002): Analytics
+| Column | Description |
+|---|---|
+| TimeStamp | Visit timestamp |
+| IP | Visitor IP |
+| Country | Country code |
+| Is Mobile | Mobile device flag |
+| Referrer | Referrer URL |
+| OS | Operating system |
+| Browser | Browser info |
+| Screen | Screen resolution |
+| VisitorID | Unique visitor ID |
+| SessionCount | Number of sessions |
