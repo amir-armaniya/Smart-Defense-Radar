@@ -1,0 +1,207 @@
+{
+  "name": "TG Monitor - Smart Defense Radar",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://rsshub.app/telegram/channel/khozkhabar",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "rss-fetch",
+      "name": "Fetch Telegram RSS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse RSS XML and extract items\nconst xml = $input.first().json.data;\n\n// Simple XML parsing for RSS items\nconst items = [];\nconst itemMatches = xml.match(/<item>([\\s\\S]*?)<\\/item>/g);\n\nif (itemMatches) {\n  for (const item of itemMatches) {\n    const title = (item.match(/<title><\\!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/title>/) || item.match(/<title>([\\s\\S]*?)<\\/title>/) || [])[1] || '';\n    const link = (item.match(/<link>([\\s\\S]*?)<\\/link>/) || [])[1] || '';\n    const description = (item.match(/<description><\\!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\\/description>/) || item.match(/<description>([\\s\\S]*?)<\\/description>/) || [])[1] || '';\n    const pubDate = (item.match(/<pubDate>([\\s\\S]*?)<\\/pubDate>/) || [])[1] || '';\n    \n    items.push({\n      json: {\n        title: title.trim(),\n        link: link.trim(),\n        content: description.trim(),\n        pubDate: pubDate.trim()\n      }\n    });\n  }\n}\n\nreturn items.length > 0 ? items : [{ json: { title: '', link: '', content: '', pubDate: '', empty: true } }];"
+      },
+      "id": "parse-rss",
+      "name": "Parse RSS Items",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "condition-empty",
+              "leftValue": "={{ $json.empty }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notTrue"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "filter-empty",
+      "name": "Skip Empty",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENROUTER_API_KEY }}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://smart-defense-radar.optemos67.workers.dev"
+            },
+            {
+              "name": "X-Title",
+              "value": "Smart Defense Radar"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"google/gemini-2.0-flash-001\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a crisis report analyzer for Khuzestan province, Iran. Extract structured data from Persian Telegram posts.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze this Telegram post and extract 4 fields in Persian:\\n\\n1. موضوع (topic): one of {امدادی, زیرساخت, شهری, محیط زیست, سلامت, متفرقه}\\n2. اولویت (priority): High | Medium | Low\\n3. اقدام (action): brief recommended action needed\\n4. محله (location): specific neighborhood/city if mentioned, otherwise نامشخص\\n\\nReturn ONLY this exact format (no extra text, no markdown):\\n1. موضوع: [value]\\n2. اولویت: [value]\\n3. اقدام: [value]\\n4. محله: [value]\\n\\nPost content: \" + $json.content\n    }\n  ],\n  \"max_tokens\": 300,\n  \"temperature\": 0.3\n}",
+        "options": {}
+      },
+      "id": "openrouter-analyze",
+      "name": "AI Analysis (OpenRouter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract AI response and format as CSV Result string\nconst aiResponse = $input.first().json;\nconst rssItem = $('Parse RSS Items').first().json;\n\nlet resultText = '';\ntry {\n  const content = aiResponse.choices[0].message.content;\n  resultText = content.replace(/\\n/g, ' | ').trim();\n} catch (e) {\n  resultText = '1. موضوع: متفرقه | 2. اولویت: Low | 3. اقدام: نیاز به بررسی | 4. محله: نامشخص';\n}\n\nreturn [{\n  json: {\n    Title: rssItem.title || 'بدون عنوان',\n    Source: rssItem.link || 'https://t.me/khozkhabar',\n    Content: rssItem.content || '',\n    Result: resultText\n  }\n}];"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 240]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "2PACX-1vTM9KAs7vjq6efmyltasWErfYKZYRbCbRId-Fp7CLbD55_oXQzsVu07pAFcm1G1T9iz8HrFHpvA2wms",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Title": "={{ $json.Title }}",
+            "Source": "={{ $json.Source }}",
+            "Content": "={{ $json.Content }}",
+            "Result": "={{ $json.Result }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "google-sheets-write",
+      "name": "Write to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1560, 240],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "noop",
+      "name": "No New Items",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1120, 400]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [{ "node": "Fetch Telegram RSS", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Telegram RSS": {
+      "main": [
+        [{ "node": "Parse RSS Items", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse RSS Items": {
+      "main": [
+        [{ "node": "Skip Empty", "type": "main", "index": 0 }]
+      ]
+    },
+    "Skip Empty": {
+      "main": [
+        [{ "node": "AI Analysis (OpenRouter)", "type": "main", "index": 0 }],
+        [{ "node": "No New Items", "type": "main", "index": 0 }]
+      ]
+    },
+    "AI Analysis (OpenRouter)": {
+      "main": [
+        [{ "node": "Format Result", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Result": {
+      "main": [
+        [{ "node": "Write to Google Sheets", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "smart-defense-radar" },
+    { "name": "telegram" },
+    { "name": "ai" }
+  ]
+}

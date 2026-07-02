@@ -1,57 +1,74 @@
-# 🛡️ Smart Civil Defense Radar (Crisis Management System)
+# Smart Civil Defense Radar (Crisis Management System)
 
 A serverless, real-time situational awareness dashboard designed for civil defense and emergency triage in low-bandwidth environments.
 
-> 🔗 **Live Demo:** https://smart-defense-radar.optemos67.workers.dev/
+> **Live Demo:** https://smart-defense-radar.optemos67.workers.dev/
 >
-> ⚠️ **Note:** The user interface is localized in **Persian (Farsi)** for the Civil Defense exhibition in Iran.
+> **Note:** The user interface is localized in **Persian (Farsi)** for the Civil Defense exhibition in Iran.
 
-## 🎯 The Challenge
-In disaster zones (earthquakes, floods, conflict), traditional centralized servers often fail or suffer from high latency. Commanders need a way to visualize incoming reports instantly without complex infrastructure.
+## Architecture
 
-## 💡 The Solution
-I architected a **"Zero-Infrastructure"** stack that relies on distributed cloud services to ensure 99.9% availability with $0 maintenance cost.
+```
+Telegram @khozkhabar → n8n Cloud (RSS poll/hr) → OpenRouter AI → Google Sheets → CF Workers
+Visitors → ActivePieces webhook → Google Sheets (analytics tab) → analytics.html
+```
 
-### Architecture Flow:
-1.  **Data Ingestion (Hybrid):**
-    * **Automated:** Monitoring Telegram channels via RSS -> **AI Analysis** (using OpenRouter/Gemini) to extract location & priority.
-    * **Manual:** Field reports via Google Forms.
-2.  **Processing (Logic):** `Activepieces` (No-Code) orchestrates the data flow, cleanses inputs, and structures the alerts.
-3.  **Storage:** Real-time sync to **Google Sheets** (acting as a high-speed database).
-4.  **Visualization:** Client-side rendering using `Leaflet.js` & `PapaParse`.
+### Components
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Data Source** | Telegram @khozkhabar | Crisis reports from Khuzestan |
+| **Backend** | n8n Cloud (free tier) | RSS monitoring + AI analysis |
+| **AI** | OpenRouter (Gemini Flash) | Extract priority, topic, location from posts |
+| **Database** | Google Sheets (Published CSV) | Zero-latency structured storage |
+| **CORS Proxy** | Cloudflare Worker (`/api/data`) | Reliable CSV fetching |
+| **Frontend** | HTML5 + Tailwind + Leaflet.js | Client-side dashboard |
+| **Analytics** | ActivePieces webhook | Visitor tracking |
+| **Hosting** | Cloudflare Workers | Serverless static hosting |
 
-## 🚀 Key Features
+## Features
 - **Serverless:** No backend code to maintain.
-- **Offline-First:** Static HTML/JS frontend hosted on Cloudflare/GitHub Pages.
-- **Live Updates:** Dashboard updates automatically as soon as data hits the sheet.
+- **Offline-First:** Static HTML/JS frontend on Cloudflare.
+- **AI-Powered:** Automatic crisis report analysis via OpenRouter/Gemini.
+- **Live Updates:** Dashboard refreshes every 60 seconds.
 - **Micro-Frontend:** Extremely lightweight (<500KB) for 2G networks.
+- **Self-Hosted CORS:** No dependency on third-party CORS proxies.
 
-## 🛠 Tech Stack
-- **Frontend:** HTML5, Tailwind CSS, Leaflet.js
-- **Automation:** Activepieces
-- **Database:** Database: Google Sheets (Published CSV) - Zero Latency
+## Tech Stack
+- **Frontend:** HTML5, Tailwind CSS, Leaflet.js, PapaParse
+- **Backend:** n8n Cloud (workflow automation)
+- **AI:** OpenRouter API (Google Gemini Flash)
+- **Database:** Google Sheets (Published CSV)
+- **Hosting:** Cloudflare Workers
+
+## n8n Workflow Setup
+See `n8n-workflows/SETUP-GUIDE.md` for step-by-step instructions.
+
+1. Sign up at https://app.n8n.cloud (free)
+2. Import `n8n-workflows/tg-monitor-workflow.json`
+3. Add OpenRouter + Google Sheets credentials
+4. Activate the workflow
 
 ---
-*Status: Live Prototype | Role: Product Architect*
+*Status: Production | Role: Product Architect*
 
 <div dir="rtl">
 
-## 🇮🇷 درباره سامانه (نسخه فارسی)
+## درباره سامانه (نسخه فارسی)
 
-**رادار هوشمند پدافند غیرعامل (Smart Civil Defense Radar)**
-یک سامانه مدیریت بحران و آگاهی وضعیت (Situational Awareness) که برای شرایط اضطراری و قطعی اینترنت طراحی شده است.
+**رادار هوشمند پدافند غیرعامل**
+یک سامانه مدیریت بحران و آگاهی وضعیت که برای شرایط اضطراری و قطعی اینترنت طراحی شده است.
 
-**چالش:** در زمان بحران (زلزله، سیل، جنگ)، سرورهای متمرکز از دسترس خارج می‌شوند یا کند هستند. فرماندهان نیاز به دیدن لحظه‌ای گزارش‌ها روی نقشه دارند.
-
-**راهکار:** معماری "بدون زیرساخت" (Zero-Infrastructure).
-۱. **جمع‌آوری:** گزارش‌ها از طریق فرم‌ها یا ربات‌ها جمع‌آوری می‌شوند.
-۲. **پردازش:** اتوماسیون Activepieces داده‌ها را تمیز می‌کند.
+**معماری:**
+۱. **جمع‌آوری:** کانال تلگرام @khozkhabar هر ساعت چک می‌شود.
+۲. **پردازش:** هوش مصنوعی (OpenRouter/Gemini) اولویت، موضوع و محله را استخراج می‌کند.
 ۳. **پایگاه داده:** گوگل شیت (به عنوان دیتابیس سریع و همیشه آنلاین).
-۴. **نمایش:** نسخه سبک و کلاینت‌ساید روی نقشه آفلاین.
+۴. **نمایش:** نسخه سبک و کلاینت‌ساید روی نقشه.
+۵. **میزبانی:** Cloudflare Workers (سرورلس).
 
 **ویژگی‌ها:**
 * بدون نیاز به نگهداری سرور (Serverless).
 * مقاوم در برابر قطعی اینترنت (Offline-First).
+* تحلیل خودکار با هوش مصنوعی.
 * هزینه نگهداری: ۰ تومان.
 
 </div>
